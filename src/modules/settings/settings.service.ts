@@ -1,6 +1,6 @@
 import type { Db } from '../../core/db/client';
 import type { AuthUser } from '../../core/env';
-import { badRequest, notFound } from '../../core/errors';
+import { notFound } from '../../core/errors';
 import { createAuditService } from '../audit/audit.service';
 import { createDocumentStatusesService } from '../document-statuses/document-statuses.service';
 import { createRefsService } from '../refs/refs.service';
@@ -53,18 +53,15 @@ export function createSettingsService(db: Db) {
         await audit.log(actor, { action: 'update', entity: 'settings_company' });
         return company();
       }
+      // `demo` is accepted for contract compatibility but ignored: demo mode is a deployment setting, so a demo
+      // visitor with admin rights can neither switch it off nor weaken its account protection.
       const a = appSettings.parse(value);
-      const emails = a.demo?.accounts.map((x) => x.email) ?? [];
-      const ids = await repo.userIdsByEmail(emails);
-      const unknown = emails.find((e) => !ids.has(e));
-      if (unknown) throw badRequest(`Akun demo "${unknown}" bukan pengguna terdaftar`);
       await repo.saveApp(
         {
           name: a.name, subtitle: a.subtitle, tagline: a.tagline, description: a.description, environmentLabel: a.environmentLabel,
-          footnote: a.footnote, printHeader: a.printHeader, printFootnote: a.printFootnote, demoPassword: a.demo?.password ?? null,
+          footnote: a.footnote, printHeader: a.printHeader, printFootnote: a.printFootnote,
         },
         a.features,
-        (a.demo?.accounts ?? []).map((x) => ({ userId: ids.get(x.email)!, label: x.label, description: x.description })),
       );
       await audit.log(actor, { action: 'update', entity: 'settings_app' });
       return app();

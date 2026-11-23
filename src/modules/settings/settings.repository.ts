@@ -14,14 +14,13 @@ export const createSettingsRepository = (db: Db) => ({
   features: () => db.select({ text: appFeatures.text }).from(appFeatures).orderBy(asc(appFeatures.sort), asc(appFeatures.id)),
   demoAccounts: () => db.select({ email: users.email, label: demoAccounts.label, description: demoAccounts.description })
     .from(demoAccounts).innerJoin(users, eq(users.id, demoAccounts.userId)).orderBy(asc(demoAccounts.sort), asc(demoAccounts.id)),
-  userIdsByEmail: async (emails: string[]) => new Map((await db.select({ id: users.id, email: users.email }).from(users)).filter((u) => emails.includes(u.email)).map((u) => [u.email, u.id])),
+  /** Accounts offered on the login page are shared identities: they must not be changed or deleted through the API. */
+  isDemoUser: async (userId: number) => !!(await db.select({ id: demoAccounts.id }).from(demoAccounts).where(eq(demoAccounts.userId, userId)))[0],
 
-  /** Replace the whole application profile (row, features, demo accounts) atomically. */
-  saveApp: (row: Omit<AppRow, 'id'>, features: string[], accounts: { userId: number; label: string; description: string }[]) => db.transaction(async (tx) => {
+  /** Replace the application profile and its feature list atomically. Demo accounts are never touched here. */
+  saveApp: (row: Omit<AppRow, 'id' | 'demoPassword'>, features: string[]) => db.transaction(async (tx) => {
     await tx.insert(appSettings).values({ ...row, id: 1 }).onConflictDoUpdate({ target: appSettings.id, set: { ...row, updatedAt: new Date() } });
     await tx.delete(appFeatures);
     if (features.length) await tx.insert(appFeatures).values(features.map((text, sort) => ({ text, sort })));
-    await tx.delete(demoAccounts);
-    if (accounts.length) await tx.insert(demoAccounts).values(accounts.map((a, sort) => ({ ...a, sort })));
   }),
 });

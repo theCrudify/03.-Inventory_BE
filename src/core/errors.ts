@@ -9,7 +9,13 @@ export const notFound = (what: string) => httpError(404, `${what} tidak ditemuka
 export const conflict = (m: string) => httpError(409, m);
 export const unprocessable = (m: string) => httpError(422, m);
 
+/** 429 carrying how long the client must wait (sent as `Retry-After`). */
+export class RateLimitError extends HTTPException {
+  constructor(message: string, public retryAfterSec: number) { super(429, { message }); }
+}
+
 export function onError(err: Error, c: Context) {
+  if (err instanceof RateLimitError) return c.json({ message: err.message }, 429, { 'Retry-After': String(err.retryAfterSec) });
   if (err instanceof HTTPException) return c.json({ message: err.message }, err.status);
   if (err instanceof ZodError) {
     return c.json({ message: 'Data tidak valid', errors: err.issues.map((i) => ({ path: i.path.join('.'), message: i.message })) }, 400);

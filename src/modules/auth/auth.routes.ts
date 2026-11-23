@@ -1,5 +1,5 @@
 import { newRouter } from '../../core/env';
-import { requireAuth } from '../../core/middleware';
+import { requireAuth } from './auth.middleware';
 import { authController as ctl } from './auth.controller';
 
 export const authRoutes = newRouter()

@@ -17,6 +17,8 @@ export const createUsersRepository = (db: Db) => ({
       .where(and(...where)).orderBy(...order).limit(toLimit(p).limit).offset(toLimit(p).offset);
   },
   insert: async (row: typeof users.$inferInsert) => (await db.insert(users).values(row).returning(publicCols))[0],
-  update: async (id: number, row: Partial<typeof users.$inferInsert>) => (await db.update(users).set(row).where(eq(users.id, id)).returning(publicCols))[0],
+  /** `revokeSessions` bumps the token version so every token issued before stops working. */
+  update: async (id: number, row: Partial<typeof users.$inferInsert>, revokeSessions = false) =>
+    (await db.update(users).set({ ...row, ...(revokeSessions && { tokenVersion: sql`${users.tokenVersion} + 1` }) }).where(eq(users.id, id)).returning(publicCols))[0],
   remove: async (id: number) => (await db.delete(users).where(eq(users.id, id)).returning(publicCols))[0],
 });

@@ -146,7 +146,17 @@ export const users = pgTable('users', {
   email: varchar('email', { length: 120 }).notNull().unique(),
   passwordHash: text('password_hash').notNull(),
   role: varchar('role', { length: 20 }).notNull().references(() => roles.code),
+  /** Bumped on password change; a token is only valid while its `tv` claim equals this value (revokes old sessions). */
+  tokenVersion: integer('token_version').notNull().default(0),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** Failed-login counters used to throttle brute force. Key is `email:<e>` or `ip:<ip>|email:<e>`. */
+export const loginAttempts = pgTable('login_attempts', {
+  key: varchar('key', { length: 320 }).primaryKey(),
+  failures: integer('failures').notNull().default(0),
+  windowStart: timestamp('window_start', { withTimezone: true }).notNull().defaultNow(),
+  lockedUntil: timestamp('locked_until', { withTimezone: true }),
 });
 
 /** The company (bonded zone operator): exactly one row. */
