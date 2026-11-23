@@ -1,5 +1,6 @@
 import type { Db } from '../../core/db/client';
 import { createCustomsDocsService } from '../customs-docs/customs-docs.service';
+import { createDocumentStatusesService } from '../document-statuses/document-statuses.service';
 import { createRefsService } from '../refs/refs.service';
 import { createSettingsService } from '../settings/settings.service';
 import type { DashboardQuery } from './dashboard.dto';
@@ -9,13 +10,14 @@ export function createDashboardService(db: Db) {
   const repo = createDashboardRepository(db);
   const customs = createCustomsDocsService(db);
   const refs = createRefsService(db);
+  const statuses = createDocumentStatusesService(db);
   const settings = createSettingsService(db);
 
   return {
     /** Counts keyed by status code and trend keyed by direction code; the UI labels them from master data. */
     async summary(q: DashboardQuery) {
       await customs.advanceInFlight();
-      const [{ timezone }, life, bcTypes] = await Promise.all([settings.company(), refs.lifecycle(), refs.bcConfigs()]);
+      const [{ timezone }, life, bcTypes] = await Promise.all([settings.company(), statuses.lifecycle(), refs.bcConfigs()]);
       const [counts, monthly, recentEvents, master] = await Promise.all([
         repo.countsByTypeStatus(), repo.approvedValueByMonth(life.approved, q.months, timezone), repo.recentEvents(q.recent), repo.masterCounts(),
       ]);

@@ -3,7 +3,7 @@
 import type { BcConfig, CeisaStage } from '../refs/refs.dto';
 
 export type Stage = Pick<CeisaStage, 'status' | 'code' | 'message' | 'afterSec'>;
-/** A master stage annotated with its status flags (from `status_dokumen`). */
+/** A master stage annotated with its status flags (from `document_statuses`). */
 export type MasterStage = Stage & { isReject: boolean; isApproval: boolean };
 export type Problem = string | null;
 export type DutyLine = { qty: number; unitPrice: number; bmRate: number; ppnRate: number; pphRate: number };
@@ -58,10 +58,10 @@ export function registrationNumber(aju: string): string {
 }
 
 /** Same checks CEISA runs on header/lines; returns the first rejection reason. */
-export function validate(header: Record<string, unknown>, lines: { hsCode: string | null }[]): Problem {
+export function validate(carrierName: string | null | undefined, lines: { hsCode: string | null }[]): Problem {
   if (!lines.length) return 'Dokumen tidak memiliki data barang';
   const noHs = lines.findIndex((l) => !l.hsCode || l.hsCode.replace(/\D/g, '').length < 8);
   if (noHs >= 0) return `Barang ke-${noHs + 1}: Pos tarif/HS (8 digit) tidak valid`;
-  if (!header.pengangkut) return 'Data pengangkut wajib diisi';
+  if (!carrierName) return 'Data pengangkut wajib diisi';
   return null;
 }

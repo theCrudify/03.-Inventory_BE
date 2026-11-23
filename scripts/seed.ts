@@ -7,35 +7,76 @@ import { hashPassword } from '../src/core/password';
 import { ajuNumber, businessDate, calcDuties } from '../src/modules/customs-docs/customs-docs.domain';
 import { createCustomsDocsRepository } from '../src/modules/customs-docs/customs-docs.repository';
 import { createCustomsDocsService } from '../src/modules/customs-docs/customs-docs.service';
-import { toBcConfig } from '../src/modules/refs/refs.service';
-import { DEMO_PASSWORD, MASTER_REFS, MASTER_SETTINGS } from './seed-master';
+import { headerBody } from '../src/modules/customs-docs/customs-docs.dto';
+import { headerToParts } from '../src/modules/customs-docs/customs-docs.mapper';
+import { DEMO_PASSWORD, MASTER, MASTER_SETTINGS } from './seed-master';
 
 const url = process.env.DATABASE_URL;
 if (!url) throw new Error('DATABASE_URL belum diset (lihat .dev.vars.example)');
 const { db, close } = createDb(url);
-const { companyId, timezone } = MASTER_SETTINGS.company;
+const { timezone } = MASTER_SETTINGS.company;
 const DAY = 86_400_000;
 const daysAgo = (d: number) => new Date(Date.now() - d * DAY);
 const ymd = (d: Date) => businessDate(d, timezone);
 
-await db.execute(sql`truncate users, settings, refs, partners, items, trade_docs, customs_docs, customs_doc_lines,
-  customs_doc_events, stock_movements, audit_logs restart identity cascade`);
+// Empty every table in the schema, then refill in foreign-key order.
+await db.execute(sql`do $$ declare r record; begin
+  for r in select tablename from pg_tables where schemaname = 'public' loop
+    execute format('truncate table %I restart identity cascade', r.tablename);
+  end loop; end $$`);
 
-// ---------- Master ----------
-await db.insert(s.settings).values(Object.entries(MASTER_SETTINGS).map(([key, value]) => ({ key, value })));
-const refs = await db.insert(s.refs).values(MASTER_REFS).returning();
-const bcOf = (code: string) => toBcConfig(refs.find((r) => r.type === 'jenis_bc' && r.code === code)!);
-const tariff = new Map(refs.filter((r) => r.type === 'hs').map((r) => [r.code, r.meta as { bm: number; ppn: number; pph: number }]));
-const dutyOf = (code: string) => { const r = refs.find((x) => x.type === 'perlakuan_pungutan' && x.code === code)!; return { label: r.name, charged: !!(r.meta as { charged?: boolean })?.charged }; };
-const initialStatus = refs.find((r) => r.type === 'status_dokumen' && (r.meta as { initial?: boolean })?.initial)!.code;
-const kursOf = (cur: string) => Number((refs.find((r) => r.type === 'valuta' && r.code === cur)!.meta as { kurs: number }).kurs);
+// ---------- Master: one table each ----------
+await db.insert(s.roles).values(MASTER.roles);
+await db.insert(s.documentStatuses).values(MASTER.documentStatuses);
+await db.insert(s.countries).values(MASTER.countries);
+await db.insert(s.ports).values(MASTER.ports);
+await db.insert(s.units).values(MASTER.units);
+await db.insert(s.packagings).values(MASTER.packagings);
+await db.insert(s.currencies).values(MASTER.currencies);
+await db.insert(s.customsOffices).values(MASTER.customsOffices);
+await db.insert(s.incoterms).values(MASTER.incoterms);
+await db.insert(s.hsCodes).values(MASTER.hsCodes);
+await db.insert(s.documentTypes).values(MASTER.documentTypes);
+await db.insert(s.transportModes).values(MASTER.transportModes);
+await db.insert(s.containerSizes).values(MASTER.containerSizes);
+await db.insert(s.containerTypes).values(MASTER.containerTypes);
+await db.insert(s.guaranteeTypes).values(MASTER.guaranteeTypes);
+await db.insert(s.itemCategories).values(MASTER.itemCategories);
+await db.insert(s.partnerKinds).values(MASTER.partnerKinds);
+await db.insert(s.directions).values(MASTER.directions);
+await db.insert(s.dutyTreatments).values(MASTER.dutyTreatments);
+await db.insert(s.stockSources).values(MASTER.stockSources);
+await db.insert(s.sourceDocTypes).values(MASTER.sourceDocTypes);
+await db.insert(s.bcTypes).values(MASTER.bcTypes);
+await db.insert(s.ceisaStages).values(MASTER.ceisaStages);
+const masterRows = Object.values(MASTER).reduce((n, rows) => n + rows.length, 0);
+
+const { company, app } = MASTER_SETTINGS;
+await db.insert(s.companyProfile).values({
+  id: 1, name: company.name, npwp: company.npwp, izinKb: company.izinKb, companyId: company.companyId, address: company.address, city: company.city,
+  timezone: company.timezone, signatoryName: company.signatory.name, signatoryTitle: company.signatory.title,
+});
+await db.insert(s.appSettings).values({
+  id: 1, name: app.name, subtitle: app.subtitle, tagline: app.tagline, description: app.description, environmentLabel: app.environmentLabel,
+  footnote: app.footnote, printHeader: app.printHeader, printFootnote: app.printFootnote, demoPassword: app.demo?.password ?? null,
+});
+await db.insert(s.appFeatures).values(app.features.map((text, sort) => ({ text, sort })));
+
+const bcOf = (code: string) => MASTER.bcTypes.find((b) => b.code === code)!;
+const tariff = new Map(MASTER.hsCodes.map((h) => [h.code, h]));
+const dutyOf = (code: string) => { const d = MASTER.dutyTreatments.find((x) => x.code === code)!; return { code: d.code, label: d.name, charged: d.charged }; };
+const initialStatus = MASTER.documentStatuses.find((x) => x.initial)!.code;
+const kursOf = (cur: string) => Number(MASTER.currencies.find((c) => c.code === cur)!.rate);
 
 const pw = await hashPassword(DEMO_PASSWORD);
-await db.insert(s.users).values([
+const users = await db.insert(s.users).values([
   { name: 'Rina Kusuma', email: 'admin@arunika.demo', passwordHash: pw, role: 'admin' },
   { name: 'Budi Santoso', email: 'operator@arunika.demo', passwordHash: pw, role: 'operator' },
   { name: 'Auditor Bea Cukai', email: 'viewer@arunika.demo', passwordHash: pw, role: 'viewer' },
-]);
+]).returning();
+if (app.demo) {
+  await db.insert(s.demoAccounts).values(app.demo.accounts.map((a, sort) => ({ userId: users.find((u) => u.email === a.email)!.id, label: a.label, description: a.description, sort })));
+}
 
 // ---------- Mitra ----------
 const partners = await db.insert(s.partners).values([
@@ -73,13 +114,19 @@ const items = await db.insert(s.items).values([
 const I = (code: string) => items.find((i) => i.code === code)!.id;
 
 // ---------- PO & Invoice ----------
-const trade = await db.insert(s.tradeDocs).values([
-  { kind: 'po', number: 'PO/ATN/2026/0412', date: ymd(daysAgo(170)), partnerId: P('Zhejiang'), currency: 'USD', incoterm: 'CIF', lines: [{ itemId: I('BB-FAB-001'), qty: 24000, unitPrice: 1.85 }, { itemId: I('BB-FAB-002'), qty: 12000, unitPrice: 1.2 }], total: '58800.00' },
-  { kind: 'po', number: 'PO/ATN/2026/0418', date: ymd(daysAgo(150)), partnerId: P('Osaka'), currency: 'USD', incoterm: 'FOB', lines: [{ itemId: I('BB-BTN-001'), qty: 400000, unitPrice: 0.012 }, { itemId: I('BB-LBL-001'), qty: 120000, unitPrice: 0.03 }], total: '8400.00' },
-  { kind: 'po', number: 'PO/ATN/2026/0431', date: ymd(daysAgo(60)), partnerId: P('Saigon'), currency: 'USD', incoterm: 'CIF', lines: [{ itemId: I('BB-THR-001'), qty: 6000, unitPrice: 1.4 }], total: '8400.00' },
-  { kind: 'invoice', number: 'INV-NWA-26-0091', date: ymd(daysAgo(70)), partnerId: P('Northwind', 'customer'), currency: 'USD', incoterm: 'FOB', lines: [{ itemId: I('FG-SHT-001'), qty: 6000, unitPrice: 9.5 }], total: '57000.00' },
-  { kind: 'invoice', number: 'INV-KAZ-26-0033', date: ymd(daysAgo(25)), partnerId: P('Kaze', 'customer'), currency: 'USD', incoterm: 'FOB', lines: [{ itemId: I('FG-TEE-001'), qty: 8000, unitPrice: 4.2 }], total: '33600.00' },
-]).returning();
+const tradeSeeds = [
+  { kind: 'po', number: 'PO/ATN/2026/0412', date: ymd(daysAgo(170)), partnerId: P('Zhejiang'), currency: 'USD', incoterm: 'CIF', lines: [{ itemId: I('BB-FAB-001'), qty: 24000, unitPrice: 1.85 }, { itemId: I('BB-FAB-002'), qty: 12000, unitPrice: 1.2 }] },
+  { kind: 'po', number: 'PO/ATN/2026/0418', date: ymd(daysAgo(150)), partnerId: P('Osaka'), currency: 'USD', incoterm: 'FOB', lines: [{ itemId: I('BB-BTN-001'), qty: 400000, unitPrice: 0.012 }, { itemId: I('BB-LBL-001'), qty: 120000, unitPrice: 0.03 }] },
+  { kind: 'po', number: 'PO/ATN/2026/0431', date: ymd(daysAgo(60)), partnerId: P('Saigon'), currency: 'USD', incoterm: 'CIF', lines: [{ itemId: I('BB-THR-001'), qty: 6000, unitPrice: 1.4 }] },
+  { kind: 'invoice', number: 'INV-NWA-26-0091', date: ymd(daysAgo(70)), partnerId: P('Northwind', 'customer'), currency: 'USD', incoterm: 'FOB', lines: [{ itemId: I('FG-SHT-001'), qty: 6000, unitPrice: 9.5 }] },
+  { kind: 'invoice', number: 'INV-KAZ-26-0033', date: ymd(daysAgo(25)), partnerId: P('Kaze', 'customer'), currency: 'USD', incoterm: 'FOB', lines: [{ itemId: I('FG-TEE-001'), qty: 8000, unitPrice: 4.2 }] },
+];
+const trade: (typeof s.tradeDocs.$inferSelect)[] = [];
+for (const { lines, ...doc } of tradeSeeds) {
+  const [row] = await db.insert(s.tradeDocs).values({ ...doc, total: lines.reduce((sum, l) => sum + l.qty * l.unitPrice, 0).toFixed(2) }).returning();
+  await db.insert(s.tradeDocLines).values(lines.map((l) => ({ tradeDocId: row.id, itemId: l.itemId, qty: String(l.qty), unitPrice: String(l.unitPrice) })));
+  trade.push(row);
+}
 const T = (no: string) => trade.find((t) => t.number === no)!.id;
 
 // ---------- Dokumen BC (header values are reference codes) ----------
@@ -148,7 +195,7 @@ await db.insert(s.stockMovements).values({ itemId: I('BB-THR-001'), source: 'pen
 
 const customs = createCustomsDocsService(db);
 const customsRepo = createCustomsDocsRepository(db);
-const firstStage = MASTER_REFS.filter((r) => r.type === 'tahap_ceisa').sort((a, b) => Number(a.meta!.afterSec) - Number(b.meta!.afterSec))[0];
+const firstStage = [...MASTER.ceisaStages].sort((a, b) => a.afterSec - b.afterSec)[0];
 let seq = 0;
 for (const d of seeds.sort((a, b) => b.ago - a.ago)) {
   const bc = bcOf(d.bc);
@@ -158,24 +205,25 @@ for (const d of seeds.sort((a, b) => b.ago - a.ago)) {
   const lines = d.lines.map(([code, qty, unitPrice]) => {
     const it = items.find((i) => i.code === code)!;
     const t = tariff.get(it.hsCode!)!;
-    return { itemId: it.id, hsCode: it.hsCode, qty, unitPrice, bmRate: t.bm, ppnRate: t.ppn, pphRate: t.pph };
+    return { itemId: it.id, hsCode: it.hsCode, qty, unitPrice, bmRate: Number(t.bmRate), ppnRate: Number(t.ppnRate), pphRate: Number(t.pphRate) };
   });
-  const [doc] = await db.insert(s.customsDocs).values({
-    bcType: bc.code, ajuNumber: ajuNumber(bc.ceisaCode, companyId, ymd(created), ++seq), partnerId: d.partner, tradeDocId: d.trade,
-    officeCode: d.office ?? bc.defaultOffice, currency, kurs: String(kurs), header: d.header,
-    totalValue: lines.reduce((a, l) => a + l.qty * l.unitPrice, 0).toFixed(2), duties: calcDuties(dutyOf(bc.duty), lines, kurs), status: initialStatus,
+  const duties = calcDuties(dutyOf(bc.dutyTreatmentCode), lines, kurs);
+  const parts = headerToParts(headerBody.parse(d.header));
+  const doc = await customsRepo.insert({
+    bcType: bc.code, ajuNumber: ajuNumber(bc.ceisaCode, company.companyId, ymd(created), ++seq), partnerId: d.partner, tradeDocId: d.trade ?? null,
+    officeCode: d.office ?? bc.defaultOfficeCode, currency, kurs: String(kurs), status: initialStatus,
+    totalValue: lines.reduce((a, l) => a + l.qty * l.unitPrice, 0).toFixed(2), ...parts.columns,
+    dutyBm: String(duties.bm), dutyPpn: String(duties.ppn), dutyPph: String(duties.pph), dutyTotal: String(duties.total), dutyTreatmentCode: bc.dutyTreatmentCode,
     createdBy: 2, createdAt: created, updatedAt: created,
-  }).returning();
-  await db.insert(s.customsDocLines).values(lines.map((l) => ({
-    docId: doc.id, itemId: l.itemId, hsCode: l.hsCode, qty: String(l.qty), unitPrice: String(l.unitPrice),
-    bmRate: String(l.bmRate), ppnRate: String(l.ppnRate), pphRate: String(l.pphRate),
-  })));
+  }, {
+    lines: lines.map((l) => ({ itemId: l.itemId, hsCode: l.hsCode, qty: String(l.qty), unitPrice: String(l.unitPrice), bmRate: String(l.bmRate), ppnRate: String(l.ppnRate), pphRate: String(l.pphRate) })),
+    containers: parts.containers, documents: parts.documents, guarantee: parts.guarantee,
+  });
   if (d.state === 'draft') continue;
   // Same path as POST /customs-docs/:id/submit, then advance() materialises every due stage and books stock.
   const at = d.state === 'live' ? new Date() : daysAgo(d.ago);
   const sent = await customsRepo.markSubmitted(doc.id, at, {
-    status: String(firstStage.meta!.status), code: firstStage.code, message: firstStage.name, createdAt: at,
-    payload: { nomorAju: doc.ajuNumber, kodeRespon: firstStage.code, uraianRespon: firstStage.name },
+    status: firstStage.statusCode, code: firstStage.code, message: firstStage.message, createdAt: at,
   });
   await customs.advance(sent);
 }
@@ -183,5 +231,5 @@ for (const d of seeds.sort((a, b) => b.ago - a.ago)) {
 await db.insert(s.auditLogs).values({ userId: 1, action: 'login', entity: 'user', entityId: 1, createdAt: daysAgo(1) });
 
 const [{ n }] = await db.execute<{ n: number }>(sql`select count(*)::int n from customs_docs`);
-console.log(`Seed selesai: ${n} dokumen BC, ${items.length} barang, ${partners.length} mitra, ${refs.length} data referensi.`);
+console.log(`Seed selesai: ${n} dokumen BC, ${items.length} barang, ${partners.length} mitra, ${masterRows} baris master.`);
 await close();

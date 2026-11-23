@@ -18,6 +18,8 @@ export function onError(err: Error, c: Context) {
   const code = pg.code ?? pg.cause?.code;
   if (code === '23505') return c.json({ message: 'Data dengan kode/nomor tersebut sudah ada' }, 409);
   if (code === '23503') return c.json({ message: 'Data masih dipakai oleh data lain' }, 409);
+  if (code === '22001') return c.json({ message: 'Isian terlalu panjang' }, 400);
+  if (code === '23514') return c.json({ message: 'Nilai tidak memenuhi aturan data' }, 400);
   console.error(err);
   return c.json({ message: 'Terjadi kesalahan pada server' }, 500);
 }

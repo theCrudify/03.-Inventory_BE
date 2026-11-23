@@ -5,7 +5,7 @@ import type { AuthUser } from '../../core/env';
 import { badRequest, httpError } from '../../core/errors';
 import { hashPassword, verifyPassword } from '../../core/password';
 import { createAuditService } from '../audit/audit.service';
-import { createRefsService } from '../refs/refs.service';
+import { createRolesService } from '../roles/roles.service';
 import { TOKEN_TTL_SEC, type changePasswordBody, type loginBody } from './auth.dto';
 import { createAuthRepository } from './auth.repository';
 
@@ -16,7 +16,7 @@ export function createAuthService(db: Db, jwtSecret: string) {
     async login({ email, password }: z.infer<typeof loginBody>) {
       const u = await repo.byEmail(email);
       if (!u || !(await verifyPassword(password, u.passwordHash))) throw httpError(401, 'Email atau password salah');
-      const perms = await createRefsService(db).role(u.role);
+      const perms = await createRolesService(db).get(u.role);
       const user: AuthUser = { id: u.id, name: u.name, email: u.email, role: u.role, canWrite: perms.canWrite, isAdmin: perms.isAdmin };
       const token = await sign({ user, exp: Math.floor(Date.now() / 1000) + TOKEN_TTL_SEC }, jwtSecret);
       await audit.log(user, { action: 'login', entity: 'user', entityId: u.id });

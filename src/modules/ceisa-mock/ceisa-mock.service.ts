@@ -24,7 +24,7 @@ export function createCeisaMockService(db: Db, secret: string) {
         message: 'Berhasil',
         dataStatus: found.events.map((e) => ({
           nomorAju: found.doc.ajuNumber, kodeProses: e.code, uraianStatus: e.message, waktuStatus: e.createdAt,
-          ...(e.payload?.nomorDaftar ? { nomorDaftar: e.payload.nomorDaftar, tanggalDaftar: e.payload.tanggalDaftar } : {}),
+          ...(e.registrationNumber ? { nomorDaftar: e.registrationNumber, tanggalDaftar: e.registrationDate } : {}),
         })),
       };
     },

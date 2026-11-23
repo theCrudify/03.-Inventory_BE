@@ -2,10 +2,12 @@ name = "inventory-api"
 main = "src/index.ts"
 compatibility_date = "2026-11-01"
 compatibility_flags = ["nodejs_compat"]
+workers_dev = true
+preview_urls = false
 
 [vars]
 # Comma-separated list of allowed frontend origins
-CORS_ORIGINS = "http://localhost:3000"
+CORS_ORIGINS = "http://localhost:3000,https://inventory-ui-rho-ten.vercel.app"
 
 # Secrets (set with `npx wrangler secret put <NAME>`; locally in .dev.vars):
 # DATABASE_URL, JWT_SECRET

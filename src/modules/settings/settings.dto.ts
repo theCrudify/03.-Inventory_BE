@@ -29,9 +29,4 @@ export const appSettings = z.object({
 export const settingSchemas = { company: companySettings, app: appSettings } as const;
 export type SettingKey = keyof typeof settingSchemas;
 export const settingKey = z.string().refine((k): k is SettingKey => k in settingSchemas, 'Pengaturan tidak dikenal');
-/** Reference types sent to the UI in /meta (small lists only; big lists are paged). */
-export const META_REF_TYPES = [
-  'tipe_referensi', 'jenis_bc', 'jenis_sumber', 'arah_dokumen', 'perlakuan_pungutan', 'sumber_mutasi', 'status_dokumen', 'tahap_ceisa', 'kategori_barang', 'jenis_mitra', 'role',
-  'kantor', 'valuta', 'negara', 'pelabuhan', 'satuan', 'kemasan', 'incoterm', 'hs',
-  'jenis_dokumen', 'cara_angkut', 'ukuran_kontainer', 'tipe_kontainer', 'jenis_jaminan',
-];
+export type AppSettings = z.infer<typeof appSettings>;
