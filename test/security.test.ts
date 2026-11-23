@@ -1,5 +1,5 @@
 // Integration security tests: they run the real app (all middleware, routes, database) in-process.
-// Needs DATABASE_URL + JWT_SECRET (loaded from .dev.vars by `npm test`) and a seeded database; skipped otherwise.
+// Needs DATABASE_URL + JWT_SECRET (loaded from .env by `npm test`) and a seeded database; skipped otherwise.
 import { after, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { sql } from 'drizzle-orm';

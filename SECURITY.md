@@ -62,7 +62,7 @@ middleware mewajibkan `sub` dan versi token yang cocok dengan database. Dijaga o
 `npm test` menjalankan 32 tes, termasuk `test/security.test.ts` yang menjalankan aplikasi sungguhan dengan database:
 matriks hak akses setiap endpoint untuk setiap role, token palsu (manipulasi, `alg: none`, kunci lain, kedaluwarsa,
 audiens salah), pencabutan sesi, brute force, enumerasi, kebijakan password, akun demo, injeksi SQL, batas ukuran,
-CORS, dan kebocoran data. Tes ini butuh `DATABASE_URL` dan `JWT_SECRET` (dibaca dari `.dev.vars`) dan database yang sudah
+CORS, dan kebocoran data. Tes ini butuh `DATABASE_URL` dan `JWT_SECRET` (dibaca dari `.env`) dan database yang sudah
 di-seed; tanpa itu dilewati.
 
 ## Risiko yang diterima (dan cara mengatasinya saat dipakai sungguhan)

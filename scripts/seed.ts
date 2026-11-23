@@ -1,5 +1,5 @@
 // Demo data for a fictional garment manufacturer in a bonded zone. Wipes and refills every table.
-// Run: npm run db:seed   (reads DATABASE_URL from .dev.vars)
+// Run: npm run db:seed   (reads DATABASE_URL from .env)
 import { sql } from 'drizzle-orm';
 import { createDb } from '../src/core/db/client';
 import * as s from '../src/core/db/schema';
@@ -12,7 +12,7 @@ import { headerToParts } from '../src/modules/customs-docs/customs-docs.mapper';
 import { DEMO_PASSWORD, MASTER, MASTER_SETTINGS } from './seed-master';
 
 const url = process.env.DATABASE_URL;
-if (!url) throw new Error('DATABASE_URL belum diset (lihat .dev.vars.example)');
+if (!url) throw new Error('DATABASE_URL belum diset (lihat .env.example)');
 const { db, close } = createDb(url);
 const { timezone } = MASTER_SETTINGS.company;
 const DAY = 86_400_000;

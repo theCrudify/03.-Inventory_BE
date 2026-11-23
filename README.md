@@ -146,15 +146,31 @@ erDiagram
 
 ```bash
 npm install
-cp .dev.vars.example .dev.vars     # isi DATABASE_URL dan JWT_SECRET
-set -a; . ./.dev.vars; set +a
-npx drizzle-kit push               # buat tabel
+cp .env.example .env               # isi DATABASE_URL dan JWT_SECRET (min. 32 karakter)
+npm run db:push                    # buat tabel
 npm run db:seed                    # data demo (menghapus isi tabel!)
-npm run dev                        # http://localhost:8787
+npm run dev                        # http://localhost:$PORT (default 8787)
 npm test                           # unit test logika inti
 ```
 
 Akun demo (password `demo1234`): `admin@arunika.demo`, `operator@arunika.demo`, `viewer@arunika.demo`.
+
+### Konfigurasi (`.env`)
+
+Semua pengaturan dibaca dari `.env` (lokal) atau `wrangler.toml [vars]` + `wrangler secret` (produksi). Nilai tidak valid
+membuat server menolak melayani dengan pesan yang jelas. Contoh lengkap ada di `.env.example`.
+
+| Variabel | Default | Fungsi |
+|---|---|---|
+| `PORT`, `HOST` | 8787, 127.0.0.1 | Alamat server lokal (`PORT=9000 npm run dev`) |
+| `DATABASE_URL` | wajib | Koneksi PostgreSQL |
+| `JWT_SECRET` | wajib | Kunci token, min. 32 karakter |
+| `CORS_ORIGINS` | wajib | Origin FE yang diizinkan, dipisah koma |
+| `CORS_ALLOW_LOCALHOST` | false | Izinkan semua `http://localhost:*` (khusus dev) |
+| `TOKEN_TTL_HOURS` | 8 | Umur token |
+| `LOGIN_MAX_PER_CLIENT` / `LOGIN_MAX_PER_EMAIL` | 5 / 20 | Batas gagal login |
+| `LOGIN_WINDOW_MIN` / `LOGIN_LOCK_MIN` | 15 / 15 | Jendela hitung dan lama kunci |
+| `BODY_LIMIT_KB` | 256 | Ukuran body maksimal |
 
 ## Deploy gratis (Cloudflare Workers + Neon)
 
