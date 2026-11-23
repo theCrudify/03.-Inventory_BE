@@ -39,7 +39,7 @@ Modul: `auth`, `users`, `settings` (profil perusahaan/aplikasi + `/meta`), `refs
 
 ## Desain database: SQL relasional murni
 
-**40 tabel, 53 foreign key, 0 kolom JSON, 0 enum.** Tidak ada tabel "serba guna" (`type`/`key`) dan tidak ada data
+**41 tabel, 53 foreign key, 0 kolom JSON, 0 enum.** Tidak ada tabel "serba guna" (`type`/`key`) dan tidak ada data
 yang disimpan sebagai JSON. Setiap daftar acuan punya tabelnya sendiri, setiap kode adalah foreign key sungguhan,
 sehingga PostgreSQL sendiri menolak kode yang tidak terdaftar. Data berulang di dalam dokumen (barang, kontainer,
 dokumen pelengkap, jaminan) adalah tabel anak dengan `ON DELETE CASCADE`.
@@ -58,7 +58,7 @@ status, atau jenis BC cukup menambah baris, tanpa migrasi dan tanpa mengubah kod
 
 | Tabel | Kolom aturan | Dipakai untuk |
 |---|---|---|
-| `roles` | `can_write`, `is_admin` | Hak akses (masuk ke token saat login). Selalu ada minimal satu role admin |
+| `roles` | `can_write`, `is_admin` | Hak akses (dibaca dari DB pada setiap permintaan). Selalu ada minimal satu role admin |
 | `document_statuses` | `initial`, `editable`, `in_flight`, `registered`, `approved`, `rejected` | Siklus dokumen. Tepat satu status awal (dijaga unique index) |
 | `directions` | `sign` (+1/−1, dijaga CHECK), `party_label`, `country_is_origin` | Tanda stok, cek saldo dokumen keluar, label dan field form |
 | `duty_treatments` | `charged` | Pungutan dihitung atau tidak |
