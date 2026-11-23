@@ -1,80 +1,92 @@
-# 03.-Inventory_BE
+# Arunika IT Inventory — Backend API (`03.-Inventory_BE`)
 
-REST API untuk **Arunika IT Inventory**, prototype IT Inventory Kawasan Berikat: dokumen BC 2.3 sampai 4.1,
-integrasi CEISA 4.0 (mock host-to-host), kartu stok, dan laporan mutasi barang.
+REST API untuk **Arunika IT Inventory**, prototype IT Inventory Kawasan Berikat: pengelolaan dokumen kepabeanan BC 2.3 sampai BC 4.1, integrasi simulasi CEISA 4.0 (mock host-to-host & INSW), pencatatan kartu stok, dan laporan mutasi barang.
 
-**Stack:** Hono di Cloudflare Workers · Drizzle ORM · PostgreSQL (Neon) · Zod · JWT (HS256) · PBKDF2
+[![Demo Video Arunika IT Inventory](video/demo.gif)](https://inventory-ui-rho-ten.vercel.app)
+*Pratinjau antarmuka operasional frontend terhubung ke backend API ini.*
 
-## Live (sudah ter-deploy)
-
-| | |
+| Layanan | URL / Detail |
 |---|---|
-| API | https://inventory-api.jidanfatahillah2003.workers.dev (Cloudflare Workers) |
-| Frontend | https://inventory-ui-rho-ten.vercel.app (Vercel) |
-| Database | Neon PostgreSQL, project `inventory` (ap-southeast-1), database `new_inventory`, role `jidan` |
-| Database lokal | PostgreSQL `localhost:5432`, database `new_inventory`, role `jidan` (nama sama dengan cloud) |
+| **API Live** | [inventory-api.jidanfatahillah2003.workers.dev](https://inventory-api.jidanfatahillah2003.workers.dev) (Cloudflare Workers) |
+| **Frontend UI** | [inventory-ui-rho-ten.vercel.app](https://inventory-ui-rho-ten.vercel.app) (Next.js 16) |
+| **Database Cloud** | Neon Serverless PostgreSQL (`ap-southeast-1`), database `new_inventory` |
+| **Database Lokal** | PostgreSQL `localhost:5432`, database `new_inventory` |
+| **Tech Stack** | Hono · Drizzle ORM · PostgreSQL (Neon) · Zod 4 · JWT (HS256) · PBKDF2 (WebCrypto) |
 
-Reset data demo di cloud (menghapus semua isi tabel lalu mengisi ulang):
-`DATABASE_URL='<connection string Neon>' npx tsx scripts/seed.ts`
+---
 
-**Keamanan:** model akses (RBAC), kontrol, hasil audit, dan risiko yang diterima ada di [SECURITY.md](SECURITY.md). `npm test` menjalankan 32 tes, termasuk matriks hak akses tiap endpoint dan skenario serangan.
+## Daftar Isi
 
-## Arsitektur
+1. [Arsitektur Sistem](#1-arsitektur-sistem)
+2. [Desain Database: SQL Relasional Murni](#2-desain-database-sql-relasional-murni)
+3. [Simulasi CEISA 4.0 & Host-to-Host](#3-simulasi-ceisa-40--host-to-host)
+4. [Daftar Lengkap Endpoint API](#4-daftar-lengkap-endpoint-api)
+5. [Contoh Pemanggilan API (cURL)](#5-contoh-pemanggilan-api-curl)
+6. [Keamanan & Model Akses (RBAC)](#6-keamanan--model-akses-rbac)
+7. [Pengujian Otomatis (32 Unit & Security Tests)](#7-pengujian-otomatis)
+8. [Konfigurasi Lingkungan (`.env`)](#8-konfigurasi-lingkungan-env)
+9. [Menjalankan Lokal](#9-menjalankan-lokal)
+10. [Deployment (Cloudflare Workers + Neon)](#10-deployment-cloudflare-workers--neon)
+
+---
+
+## 1. Arsitektur Sistem
+
+API dibangun dengan arsitektur modular 5-lapisan (*layer*) yang memisahkan tanggung jawab secara tegas:
 
 ```
 src/
-  index.ts                 # menyusun semua routes + middleware global
-  core/                    # env, error handler, middleware (db, auth, role), helper http, db schema/client
+  index.ts                 # Bootstrap server Hono, global error handler, CORS, dan router
+  core/                    # Helper global, env parser, DB schema/client, middleware auth & RBAC
   modules/<modul>/
-    <modul>.dto.ts         # skema validasi request (Zod) + tipe
-    <modul>.repository.ts  # semua query database (Drizzle)
-    <modul>.service.ts     # logika bisnis + audit log
-    <modul>.controller.ts  # adaptor HTTP: parse DTO → panggil service → JSON
-    <modul>.routes.ts      # path + middleware role
+    <modul>.dto.ts         # Skema validasi request & response (Zod) + TypeScript types
+    <modul>.repository.ts  # Akses data & query SQL terparameter (Drizzle ORM)
+    <modul>.service.ts     # Logika bisnis inti, validasi domain, dan pencatatan audit log
+    <modul>.controller.ts  # HTTP adaptor: parsing DTO → panggil service → return JSON
+    <modul>.routes.ts      # Definisi URL path & middleware hak akses per role
 ```
 
-Modul: `auth`, `users`, `settings` (profil perusahaan/aplikasi + `/meta`), `refs` (master referensi + mock INSW),
-`roles`, `document-statuses`, `items`, `partners`, `trade-docs`, `customs-docs` (+ `customs-docs.domain.ts` berisi aturan murni yang dites),
-`ceisa-mock`, `dashboard`, `reports`, `audit`.
+### Modul-Modul yang Tersedia:
+- `auth`: Autentikasi JWT, login dengan proteksi brute force, dan ganti password.
+- `users`: Manajemen akun pengguna dan pencabutan sesi aktif.
+- `settings`: Pengaturan profil pengusaha TPB/Kawasan Berikat dan endpoint `/meta`.
+- `refs`: Direktori acuan pabean (negara, pelabuhan, valuta, kemasan, kantor bea cukai) & mock INSW.
+- `roles`: Master role dinamis dengan flag `can_write` dan `is_admin`.
+- `document-statuses`: Master siklus hidup status dokumen kepabeanan.
+- `items`: Master barang, kategori, HS code 8-digit, dan akumulasi saldo fisik stok.
+- `partners`: Master mitra usaha (pemasok impor/lokal dan pembeli ekspor/lokal).
+- `trade-docs`: Dokumen sumber perdagangan (Purchase Order dan Commercial Invoice).
+- `customs-docs`: Dokumen pabean BC 2.3 s.d. BC 4.1, kalkulasi pungutan, dan submit CEISA.
+- `ceisa-mock`: Endpoint simulasi gateway CEISA 4.0 dan OAuth2 NLE.
+- `dashboard`: Agregasi metrik KPI, tren nilai pabean bulanan, dan respon CEISA terbaru.
+- `reports`: Rekapitulasi laporan mutasi stok per kategori barang dengan histori pembukuan.
+- `audit`: Jejak audit (*audit trail*) mencatat seluruh mutasi data dan upaya autentikasi.
 
-## Desain database: SQL relasional murni
+---
 
-**41 tabel, 53 foreign key, 0 kolom JSON, 0 enum.** Tidak ada tabel "serba guna" (`type`/`key`) dan tidak ada data
-yang disimpan sebagai JSON. Setiap daftar acuan punya tabelnya sendiri, setiap kode adalah foreign key sungguhan,
-sehingga PostgreSQL sendiri menolak kode yang tidak terdaftar. Data berulang di dalam dokumen (barang, kontainer,
-dokumen pelengkap, jaminan) adalah tabel anak dengan `ON DELETE CASCADE`.
+## 2. Desain Database: SQL Relasional Murni
 
-| Kelompok | Tabel |
+**41 tabel relasional, 53 foreign key, 0 kolom JSON tak berstruktur, 0 enum.**
+Setiap daftar acuan memiliki tabel tersendiri dengan kode sebagai primary key. Integritas data dijaga langsung oleh database PostgreSQL melalui constraint `FOREIGN KEY` dan `ON DELETE CASCADE`.
+
+| Kategori Tabel | Daftar Tabel |
 |---|---|
-| Akses & siklus dokumen | `roles`, `document_statuses` |
-| Master acuan (kunci: kode) | `countries`, `ports`, `units`, `packagings`, `currencies`, `customs_offices`, `incoterms`, `hs_codes`, `document_types`, `transport_modes`, `container_sizes`, `container_types`, `guarantee_types`, `item_categories`, `partner_kinds`, `directions`, `duty_treatments`, `stock_sources`, `source_doc_types`, `bc_types`, `ceisa_stages` |
-| Pengguna & pengaturan | `users`, `company_profile` (1 baris), `app_settings` (1 baris), `app_features`, `demo_accounts` |
-| Data usaha | `partners`, `items`, `trade_docs`, `trade_doc_lines` |
-| Dokumen BC | `customs_docs`, `customs_doc_lines`, `customs_doc_containers`, `customs_doc_documents`, `customs_doc_guarantees`, `customs_doc_events` |
-| Stok & jejak | `stock_movements`, `audit_logs` |
+| **Akses & Siklus** | `roles`, `document_statuses` |
+| **Master Acuan** | `countries`, `ports`, `units`, `packagings`, `currencies`, `customs_offices`, `incoterms`, `hs_codes`, `document_types`, `transport_modes`, `container_sizes`, `container_types`, `guarantee_types`, `item_categories`, `partner_kinds`, `directions`, `duty_treatments`, `stock_sources`, `source_doc_types`, `bc_types`, `ceisa_stages` |
+| **Profil & Pengaturan** | `users`, `company_profile`, `app_settings`, `app_features`, `demo_accounts`, `login_attempts` |
+| **Data Usaha** | `partners`, `items`, `trade_docs`, `trade_doc_lines` |
+| **Dokumen Pabean** | `customs_docs`, `customs_doc_lines`, `customs_doc_containers`, `customs_doc_documents`, `customs_doc_guarantees`, `customs_doc_events` |
+| **Stok & Audit** | `stock_movements`, `audit_logs` |
 
-**Perilaku adalah data, bukan kode.** Aturan aplikasi tersimpan sebagai kolom di tabel master, jadi menambah role,
-status, atau jenis BC cukup menambah baris, tanpa migrasi dan tanpa mengubah kode:
+### Konsep: "Perilaku adalah Data, Bukan Kode"
+Aturan operasional disimpan sebagai data pada tabel master. Mengubah atau menambah perilaku bisnis tidak memerlukan migrasi kode aplikasi:
+- **`roles`:** Kolom `can_write` dan `is_admin` dibaca langsung dari database pada setiap request.
+- **`document_statuses`:** Status awal (*initial*), izin edit (*editable*), dalam proses (*in_flight*), hingga selesai (*approved*/*rejected*) didefinisikan lewat kolom boolean.
+- **`directions`:** Menentukan arah mutasi stok (`+1` untuk pemasukan, `-1` untuk pengeluaran) dan validasi saldo stok.
+- **`ceisa_stages`:** Waktu jeda transisi simulasi CEISA diatur pada kolom `after_sec`.
+- **`hs_codes`:** Menyimpan tarif Bea Masuk, PPN, dan PPh aktual yang disalin ke dokumen saat pembuatan.
 
-| Tabel | Kolom aturan | Dipakai untuk |
-|---|---|---|
-| `roles` | `can_write`, `is_admin` | Hak akses (dibaca dari DB pada setiap permintaan). Selalu ada minimal satu role admin |
-| `document_statuses` | `initial`, `editable`, `in_flight`, `registered`, `approved`, `rejected` | Siklus dokumen. Tepat satu status awal (dijaga unique index) |
-| `directions` | `sign` (+1/−1, dijaga CHECK), `party_label`, `country_is_origin` | Tanda stok, cek saldo dokumen keluar, label dan field form |
-| `duty_treatments` | `charged` | Pungutan dihitung atau tidak |
-| `stock_sources` | `from_document`, `is_adjustment` | Sumber mutasi dari dokumen BC; kolom penyesuaian di laporan |
-| `bc_types` | arah, jenis mitra, kantor default, kode & pesan persetujuan, perlakuan pungutan, wajib jaminan, … | Seluruh aturan per jenis BC |
-| `ceisa_stages` | `status_code`, `after_sec` | Tahap dan waktu respon CEISA tiruan |
-| `hs_codes` | `bm_rate`, `ppn_rate`, `pph_rate` | Tarif; disalin ke baris dokumen saat disimpan |
-| `company_profile` | nama, NPWP, ID CEISA, zona waktu, penandatangan | Dokumen cetak, nomor aju, tanggal bisnis |
-
-Isi awal ada di `scripts/seed-master.ts` (satu array per tabel). Daftar acuan yang bisa diubah admin dari UI
-ada di `src/modules/refs/masters.ts` (peta daftar → tabel); API tetap memakai bentuk JSON yang sama agar klien tidak berubah.
-
-### Diagram relasi
-
-Dibuat otomatis dari katalog PostgreSQL (`parent ||--o{ child` = foreign key).
-
+### Entity-Relationship Diagram (ERD)
 ```mermaid
 erDiagram
   bc_types ||--o{ customs_docs : "bc_type"
@@ -132,78 +144,233 @@ erDiagram
   users ||--o{ demo_accounts : "user_id"
 ```
 
-## Mock CEISA
+---
 
-- `POST /customs-docs/:id/submit` mengirim dokumen. Status lalu bergerak sendiri mengikuti master `tahap_ceisa`
-  (default: terkirim 0 dtk → diterima 5 dtk → tervalidasi + nomor pendaftaran 12 dtk → SPPB/NPE/SPPJ 25 dtk).
-  Tidak butuh cron: tahapan dicatat saat dokumen dibaca (`modules/customs-docs`).
-- Validasi meniru CEISA: HS code 8 digit dan data pengangkut wajib. Dokumen yang tidak lolos akan **ditolak (kode 900)**.
-- Dokumen keluar dicek ke saldo stok. Stok baru dibukukan setelah dokumen disetujui.
-- Endpoint yang meniru gateway asli: `POST /mock-ceisa/nle-oauth/v1/user/login`, `GET /mock-ceisa/openapi/status/{nomorAju}`.
-- Mock INSW: `GET /insw/hs/{kodeHs}` mengembalikan tarif BM, PPN, dan PPh.
+## 3. Simulasi CEISA 4.0 & Host-to-Host
 
-## Menjalankan lokal
+1. **Alur Pengiriman Dokumen (`POST /customs-docs/:id/submit`):**
+   - Mengubah status dokumen dari `draft` menjadi `terkirim`.
+   - Tahapan transisi berikutnya bergerak otomatis sesuai selisih waktu (`after_sec`) pada tabel `ceisa_stages`:
+     - $0\text{ dtk} \to$ `terkirim` (Dokumen terkirim ke CEISA)
+     - $5\text{ dtk} \to$ `diterima` (Diterima sistem Bea Cukai)
+     - $12\text{ dtk} \to$ `tervalidasi` (Nomor & Tanggal Pendaftaran terbit)
+     - $25\text{ dtk} \to$ `disetujui` (Terbit SPPB / NPE / SPPJ)
+   - Transisi diproses secara deterministik saat dokumen dibaca (`advance()`), tanpa membutuhkan background worker atau cron.
+2. **Validasi Kepatuhan CEISA:**
+   - HS Code wajib 8 digit dan terdaftar di master.
+   - Sarana pengangkut dan nomor voyage/polisi wajib diisi.
+   - Dokumen pengeluaran wajib memiliki saldo stok fisik yang mencukupi.
+   - Dokumen yang tidak valid otomatis **ditolak (kode 900)** dengan penjelasan kesalahan yang dapat direvisi dan dikirim ulang.
+3. **Pencatatan Kartu Stok Bersyarat:**
+   - Mutasi stok hanya dicatat ketika dokumen mencapai status persetujuan akhir (`approved`). Update bersyarat mencegah duplikasi pencatatan stok.
+4. **Mock Gateway Eksternal:**
+   - `POST /mock-ceisa/nle-oauth/v1/user/login`: Simulasi login OAuth2 NLE CEISA.
+   - `GET /mock-ceisa/openapi/status/:aju`: Endpoint status dokumen pabean format OpenAPI.
+   - `GET /insw/hs/:kode`: Endpoint simulasi portal INSW untuk cek tarif BM, PPN, dan PPh.
 
+---
+
+## 4. Daftar Lengkap Endpoint API
+
+Header otorisasi: `Authorization: Bearer <token>` (kecuali endpoint berlabel *Publik*).
+
+| Metode | Endpoint | Akses | Deskripsi |
+|---|---|---|---|
+| `POST` | `/auth/login` | Publik | Autentikasi user & penerbitan token JWT |
+| `GET` | `/auth/me` | Authenticated | Profil user yang sedang login |
+| `POST` | `/auth/change-password` | Authenticated | Ganti password & pembatalan seluruh sesi lama |
+| `GET` | `/meta/public` | Publik | Profil perusahaan & branding minimal untuk halaman login |
+| `GET` | `/meta` | All Roles | Metadata master lengkap untuk frontend (*data-driven*) |
+| `GET` | `/dashboard` | All Roles | Ringkasan KPI dokumen, tren nilai pabean, dan respon CEISA |
+| `GET` | `/items` | All Roles | Daftar master barang & saldo fisik |
+| `POST` | `/items` | Operator, Admin | Tambah master barang |
+| `PUT, DELETE` | `/items/:id` | Operator, Admin | Ubah / hapus master barang |
+| `GET` | `/partners` | All Roles | Direktori mitra usaha (pemasok/pembeli) |
+| `POST, PUT, DELETE`| `/partners/:id?` | Operator, Admin | CRUD mitra usaha |
+| `GET` | `/trade-docs` | All Roles | Daftar Purchase Order & Commercial Invoice |
+| `POST, PUT, DELETE`| `/trade-docs/:id?` | Operator, Admin | CRUD PO & Invoice |
+| `GET` | `/customs-docs` | All Roles | Daftar dokumen kepabeanan (filter jenis BC, status, tanggal) |
+| `GET` | `/customs-docs/:id` | All Roles | Detail dokumen BC, pos barang, pungutan, dan respon CEISA |
+| `POST` | `/customs-docs` | Operator, Admin | Buat dokumen kepabeanan baru (draft) |
+| `PUT, DELETE` | `/customs-docs/:id` | Operator, Admin | Ubah / hapus dokumen (hanya status draft/ditolak) |
+| `POST` | `/customs-docs/:id/submit` | Operator, Admin | Kirim dokumen ke CEISA |
+| `GET` | `/reports/mutasi` | All Roles | Laporan pertanggungjawaban mutasi stok bahan/barang |
+| `GET` | `/refs/:type` | All Roles | Ambil referensi master (negara, valuta, tarif HS, dll.) |
+| `POST, PUT, DELETE`| `/refs/:type/:code?`| Admin | Pengelolaan data acuan master |
+| `GET, POST, PUT, DELETE` | `/users/:id?` | Admin | Manajemen akun pengguna |
+| `GET, POST, PUT, DELETE` | `/roles/:id?` | Admin | Manajemen master role & permissions |
+| `GET, POST, PUT, DELETE` | `/document-statuses/:id?` | Admin | Manajemen siklus status dokumen |
+| `PUT` | `/settings/:key` | Admin | Pengaturan profil pengusaha TPB (`company`) dan aplikasi (`app`) |
+| `GET` | `/audit-logs` | Admin | Jejak audit aktivitas login dan mutasi data |
+| `GET` | `/insw/hs/:kode` | All Roles | Simulasi tarif kepabeanan INSW |
+| `POST` | `/mock-ceisa/nle-oauth/v1/user/login` | Publik | Gateway token mock CEISA NLE |
+| `GET` | `/mock-ceisa/openapi/status/:aju` | Token CEISA | Cek status respon pabean via CEISA OpenAPI |
+
+---
+
+## 5. Contoh Pemanggilan API (cURL)
+
+### 1. Login Akun Demo
 ```bash
-npm install
-cp .env.example .env               # isi DATABASE_URL dan JWT_SECRET (min. 32 karakter)
-npm run db:push                    # buat tabel
-npm run db:seed                    # data demo (menghapus isi tabel!)
-npm run dev                        # http://localhost:$PORT (default 8787)
-npm test                           # unit test logika inti
+API="https://inventory-api.jidanfatahillah2003.workers.dev"
+
+# Login sebagai Operator
+RES=$(curl -s -X POST "$API/auth/login" \
+  -H "Content-Type: application/json" \
+  -d '{"email":"operator@arunika.demo","password":"demo1234"}')
+
+TOKEN=$(echo $RES | jq -r .token)
+echo "Token JWT: $TOKEN"
 ```
 
-Akun demo (password `demo1234`): `admin@arunika.demo`, `operator@arunika.demo`, `viewer@arunika.demo`.
+### 2. Mengambil Metadata Master
+```bash
+curl -s "$API/meta" \
+  -H "Authorization: Bearer $TOKEN" | jq .
+```
 
-### Konfigurasi (`.env`)
+### 3. Mengambil Daftar Dokumen BC 2.3
+```bash
+curl -s "$API/customs-docs?bc=23&pageSize=10" \
+  -H "Authorization: Bearer $TOKEN" | jq .
+```
 
-Semua pengaturan dibaca dari `.env` (lokal) atau `wrangler.toml [vars]` + `wrangler secret` (produksi). Nilai tidak valid
-membuat server menolak melayani dengan pesan yang jelas. Contoh lengkap ada di `.env.example`.
+### 4. Kirim Dokumen ke CEISA
+```bash
+curl -s -X POST "$API/customs-docs/1/submit" \
+  -H "Authorization: Bearer $TOKEN" | jq .
+```
 
-| Variabel | Default | Fungsi |
-|---|---|---|
-| `PORT`, `HOST` | 8787, 127.0.0.1 | Alamat server lokal (`PORT=9000 npm run dev`) |
-| `DATABASE_URL` | wajib | Koneksi PostgreSQL |
-| `JWT_SECRET` | wajib | Kunci token, min. 32 karakter |
-| `CORS_ORIGINS` | wajib | Origin FE yang diizinkan, dipisah koma |
-| `CORS_ALLOW_LOCALHOST` | false | Izinkan semua `http://localhost:*` (khusus dev) |
-| `TOKEN_TTL_HOURS` | 8 | Umur token |
-| `LOGIN_MAX_PER_CLIENT` / `LOGIN_MAX_PER_EMAIL` | 5 / 20 | Batas gagal login |
-| `LOGIN_WINDOW_MIN` / `LOGIN_LOCK_MIN` | 15 / 15 | Jendela hitung dan lama kunci |
-| `BODY_LIMIT_KB` | 256 | Ukuran body maksimal |
+### 5. Mengambil Laporan Mutasi Stok Bahan Baku
+```bash
+curl -s "$API/reports/mutasi?kategori=bahan-baku&from=2026-06-01&to=2026-11-23" \
+  -H "Authorization: Bearer $TOKEN" | jq .
+```
 
-## Deploy (Cloudflare Workers + Neon)
+---
 
-**Penting:** `git push` saja **tidak** men-deploy apa pun sampai repo dihubungkan (lihat "Otomatis lewat push" di bawah).
-Deploy yang berjalan sekarang memakai perintah CLI.
+## 6. Keamanan & Model Akses (RBAC)
 
-### Persiapan sekali saja
-1. Buat project di [neon.tech](https://neon.tech) (free tier). Catat dua connection string:
-   *direct* (untuk skema dan seed) dan *pooled* (host `-pooler`, untuk Worker). Nama database: `new_inventory`.
-2. `npx wrangler login`
-3. Simpan secret di Cloudflare (tidak masuk repo):
+Penjelasan lengkap mengenai model keamanan dan hasil audit tersimpan di [SECURITY.md](SECURITY.md).
+
+- **Otorisasi RBAC Real-time:** Izin diverifikasi dari database pada setiap panggilan API, bukan dari klaim token. Perubahan hak role langsung berlaku seketika.
+- **Pencegahan IDOR:** Identitas pengguna diambil dari signature JWT; manipulasi ID pada parameter query/body ditolak.
+- **Perlindungan Brute Force:** Pembatasan maksimal 5 kali kegagalan login per IP+email atau 20 kali per email dalam jendela 15 menit. Percobaan melebihi batas akan diblokir dengan status HTTP `429 Too Many Requests`.
+- **Anti-Enumerasi Akun:** Email tidak terdaftar dan password salah mengembalikan pesan dan waktu eksekusi yang identik menggunakan timing mitigation (hash dummy).
+- **Kebijakan Password:** Minimal 10 karakter, maksimal 128 karakter, wajib kombinasi huruf dan angka, di-hash menggunakan **PBKDF2-SHA256 (100.000 iterasi)**.
+- **Pemisahan Kunci CEISA:** Token gateway CEISA tiruan menggunakan secret turunan terpisah dengan audiens khusus (`ceisa-gateway`), sehingga tidak dapat digunakan untuk mem-bypass API aplikasi.
+- **Header Keamanan & Sanitasi:** Seluruh respons dilengkapi `Cache-Control: no-store`, `Strict-Transport-Security`, `X-Content-Type-Options: nosniff`, dan pembatasan body maksimal 256 KB.
+
+---
+
+## 7. Pengujian Otomatis
+
+Aplikasi dilengkapi 32 rangkaian automated tests yang menguji logika bisnis, kalkulasi tarif kepabeanan, hingga skenario uji penetrasi keamanan:
+
+```bash
+# Menjalankan seluruh test suite
+npm test
+```
+
+### Lingkup Pengujian:
+- ✅ Format validasi Nomor Aju 26-digit standar Bea Cukai.
+- ✅ Zona waktu bisnis perusahaan (bukan UTC server).
+- ✅ Perhitungan tarif pungutan per pos barang (BM, PPN, PPh dari master HS).
+- ✅ Validasi kepatuhan kelengkapan CEISA (HS 8-digit, kelengkapan pengangkut).
+- ✅ Verifikasi password PBKDF2.
+- ✅ Matriks otorisasi RBAC (Viewer, Operator, Admin).
+- ✅ Pencegahan penggunaan token palsu atau salah audiens.
+- ✅ Pencabutan sesi seketika saat password diubah atau user dihapus.
+- ✅ Uji brute force login & mitigasi enumerasi email.
+- ✅ Uji SQL Injection payload & penolakan data malformed (HTTP 400/413).
+- ✅ Uji pembatasan CORS whitelist.
+
+---
+
+## 8. Konfigurasi Lingkungan (`.env`)
+
+Konfigurasi dibaca dari `.env` (lokal) atau `wrangler.toml` / `wrangler secret` (produksi Cloudflare):
+
+| Variabel | Tipe | Default | Keterangan |
+|---|---|---|---|
+| `PORT` | number | `8787` | Port server lokal |
+| `HOST` | string | `127.0.0.1` | Host server lokal |
+| `DATABASE_URL` | string | *Wajib* | Connection string PostgreSQL (Neon) |
+| `JWT_SECRET` | string | *Wajib* | Secret key JWT (minimal 32 karakter) |
+| `CORS_ORIGINS` | string | *Wajib* | Daftar origin frontend yang diizinkan (dipisah koma) |
+| `CORS_ALLOW_LOCALHOST` | boolean | `false` | Izinkan semua `http://localhost:*` untuk development |
+| `TOKEN_TTL_HOURS` | number | `8` | Masa aktif token JWT dalam jam |
+| `LOGIN_MAX_PER_CLIENT` | number | `5` | Batas gagal login per IP |
+| `LOGIN_MAX_PER_EMAIL` | number | `20` | Batas gagal login per email |
+| `LOGIN_WINDOW_MIN` | number | `15` | Periode pemantauan percobaan login (menit) |
+| `LOGIN_LOCK_MIN` | number | `15` | Durasi lockout akun setelah limit terlewati (menit) |
+| `BODY_LIMIT_KB` | number | `256` | Batas ukuran payload JSON (Kilobytes) |
+
+---
+
+## 9. Menjalankan Lokal
+
+Prasyarat: **Node.js 20+** dan PostgreSQL lokal (atau database Neon).
+
+```bash
+# 1. Masuk ke direktori backend
+cd 03.-Inventory_BE
+
+# 2. Pasang dependensi
+npm install
+
+# 3. Buat file .env dari template
+cp .env.example .env
+# Edit file .env dan masukkan DATABASE_URL serta JWT_SECRET Anda
+
+# 4. Sinkronisasi skema tabel ke PostgreSQL
+npm run db:push
+
+# 5. Isi data master & demo (opsional untuk initial setup)
+npm run db:seed
+
+# 6. Jalankan development server
+npm run dev
+# Server berjalan di http://localhost:8787
+
+# 7. Jalankan unit & security tests
+npm test
+```
+
+Akun demo siap pakai (Password: `demo1234`):
+- Admin: `admin@arunika.demo`
+- Operator: `operator@arunika.demo`
+- Viewer: `viewer@arunika.demo`
+
+---
+
+## 10. Deployment (Cloudflare Workers + Neon)
+
+### Persiapan Pertama Kali
+1. Siapkan database PostgreSQL di [neon.tech](https://neon.tech). Catat dua connection string:
+   - **Direct connection:** Digunakan untuk eksekusi skrip migrasi `db:push` dan `db:seed`.
+   - **Pooled connection (`-pooler`):** Digunakan oleh runtime Cloudflare Worker untuk efisiensi *connection pooling*.
+2. Login ke akun Cloudflare via CLI:
    ```bash
-   npx wrangler secret put DATABASE_URL   # connection string pooled Neon
-   npx wrangler secret put JWT_SECRET     # openssl rand -hex 32
+   npx wrangler login
    ```
-4. Isi `CORS_ORIGINS` di `wrangler.toml` dengan URL frontend (`https://<app>.vercel.app`, tanpa garis miring akhir).
+3. Daftarkan secret di Cloudflare Workers:
+   ```bash
+   npx wrangler secret put DATABASE_URL   # Masukkan connection string Neon (-pooler)
+   npx wrangler secret put JWT_SECRET     # Generate key acak minimal 32 karakter
+   ```
+4. Pastikan `CORS_ORIGINS` di `wrangler.toml` sudah mencantumkan domain produksi frontend Vercel:
+   ```toml
+   [vars]
+   CORS_ORIGINS = "https://inventory-ui-rho-ten.vercel.app"
+   ```
 
-### Setiap kali mengubah kode (CLI)
-| Yang berubah | Perintah |
+### Prosedur Rilis Pembaruan
+| Komponen yang Diubah | Perintah Eksekusi |
 |---|---|
-| Kode API | `npm test && npm run deploy` |
-| Skema database (`src/core/db/schema.ts`) | `DATABASE_URL='<direct Neon>' npm run db:push`, lalu `npm run deploy` |
-| Reset data demo (**menghapus isi tabel**) | `DATABASE_URL='<direct Neon>' npm run db:seed` |
-| Ganti secret | `npx wrangler secret put JWT_SECRET` (mengganti `JWT_SECRET` mematikan semua sesi) |
-| Nilai non-rahasia (`CORS_ORIGINS`, batas login, dll.) | ubah `[vars]` di `wrangler.toml`, lalu `npm run deploy` |
+| **Kode API** | `npm test && npm run deploy` |
+| **Skema Database (`schema.ts`)** | `DATABASE_URL='<direct Neon>' npm run db:push && npm run deploy` |
+| **Reset Data Demo** | `DATABASE_URL='<direct Neon>' npm run db:seed` |
+| **Penggantian Secret** | `npx wrangler secret put JWT_SECRET` |
 
-Urutan jika skema berubah: **db:push dulu, baru deploy**, supaya kode baru tidak berjalan di atas tabel lama.
-Cek hasilnya: `curl https://<worker>.workers.dev/` harus mengembalikan `{"name":"inventory-api","status":"ok"}`.
-Log langsung: `npx wrangler tail`.
-
-### Otomatis lewat push (opsional)
-Pilih salah satu:
-- **Cloudflare Workers Builds**: dashboard Cloudflare, Workers & Pages, `inventory-api`, Settings, Builds, hubungkan repo GitHub.
-  Build command kosong, deploy command `npx wrangler deploy`. Setiap push ke `main` ter-deploy. Skema tetap manual (`db:push`).
-- **GitHub Actions**: workflow yang menjalankan `npm ci && npm test && npx wrangler deploy` dengan secret repo
-  `CLOUDFLARE_API_TOKEN` (template "Edit Cloudflare Workers"). Tes butuh `DATABASE_URL` dan `JWT_SECRET` juga.
+> **Urutan Deployment:** Bila skema database dan kode API berubah bersamaan, selalu jalankan **`db:push` terlebih dahulu**, baru jalankan `npm run deploy`.
