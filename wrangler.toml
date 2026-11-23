@@ -6,8 +6,18 @@ workers_dev = true
 preview_urls = false
 
 [vars]
-# Comma-separated list of allowed frontend origins
-CORS_ORIGINS = "http://localhost:3000,https://inventory-ui-rho-ten.vercel.app"
+# Comma-separated list of allowed frontend origins (production only; local origins live in .env).
+CORS_ORIGINS = "https://inventory-ui-rho-ten.vercel.app"
 
-# Secrets (set with `npx wrangler secret put <NAME>`; locally in .dev.vars):
+# Optional tunables (defaults in src/core/config.ts), e.g.:
+# TOKEN_TTL_HOURS = "8"
+# LOGIN_MAX_PER_CLIENT = "5"
+# BODY_LIMIT_KB = "256"
+
+# Secrets: set with `npx wrangler secret put <NAME>` (locally they come from .env):
 # DATABASE_URL, JWT_SECRET
+
+# Used when running `npx wrangler dev` directly; `npm run dev` takes PORT/HOST from .env instead.
+[dev]
+port = 8787
+ip = "127.0.0.1"

@@ -7,14 +7,15 @@ import { hashPassword, verifyPassword } from '../../core/password';
 import { APP_AUDIENCE, signingSecret } from '../../core/security';
 import { createAuditService } from '../audit/audit.service';
 import { createSettingsRepository } from '../settings/settings.repository';
-import { LOGIN_RULES, TOKEN_TTL_SEC, type changePasswordBody, type loginBody } from './auth.dto';
+import type { AppConfig } from '../../core/config';
+import type { changePasswordBody, loginBody } from './auth.dto';
 import { createAuthRepository } from './auth.repository';
 
 // Verified against when the email is unknown, so "no such user" costs the same time as "wrong password".
 const DECOY_HASH = 'pbkdf2$100000$488ac0b4b4297f144eaf0bbe4b4b311a$16d293f306231b8743cda1a5079b837fb62442b2d7e47b8346db5993b464be2c';
 const BAD_LOGIN = 'Email atau password salah';
 
-export function createAuthService(db: Db, jwtSecret: string) {
+export function createAuthService(db: Db, jwtSecret: string, cfg: AppConfig) {
   const repo = createAuthRepository(db);
   const audit = createAuditService(db);
 
@@ -27,7 +28,7 @@ export function createAuthService(db: Db, jwtSecret: string) {
       const u = await repo.byEmail(email);
       const ok = u ? await verifyPassword(password, u.passwordHash) : (await verifyPassword(password, DECOY_HASH), false);
       if (!u || !ok) {
-        await Promise.all([repo.recordFailure(clientKey, LOGIN_RULES.perClient), repo.recordFailure(emailKey, LOGIN_RULES.perEmail), repo.purgeOldAttempts()]);
+        await Promise.all([repo.recordFailure(clientKey, cfg.login.perClient, cfg.login), repo.recordFailure(emailKey, cfg.login.perEmail, cfg.login), repo.purgeOldAttempts()]);
         await audit.log(null, { action: 'login_failed', entity: 'user', data: { email } });
         throw httpError(401, BAD_LOGIN);
       }
@@ -37,7 +38,7 @@ export function createAuthService(db: Db, jwtSecret: string) {
       await repo.clearAttempts([clientKey, emailKey]);
       const now = Math.floor(Date.now() / 1000);
       // Identity only: permissions are read from the database on every request, never carried in the token.
-      const token = await sign({ sub: String(u.id), tv: u.tokenVersion, aud: APP_AUDIENCE, iat: now, exp: now + TOKEN_TTL_SEC }, signingSecret(jwtSecret, APP_AUDIENCE));
+      const token = await sign({ sub: String(u.id), tv: u.tokenVersion, aud: APP_AUDIENCE, iat: now, exp: now + cfg.tokenTtlSec }, signingSecret(jwtSecret, APP_AUDIENCE));
       const user: AuthUser = { id: s.id, name: s.name, email: s.email, role: s.role, canWrite: s.canWrite, isAdmin: s.isAdmin };
       await audit.log(user, { action: 'login', entity: 'user', entityId: u.id });
       return { token, user };
