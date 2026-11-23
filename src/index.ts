@@ -23,6 +23,15 @@ import { usersRoutes } from './modules/users/users.routes';
 
 const app = new Hono<Env>();
 
+// Plain HTTP would put tokens and passwords on the wire in clear text: send clients to HTTPS (local development stays on HTTP).
+app.use('*', async (c, next) => {
+  const u = new URL(c.req.url);
+  if (u.protocol === 'http:' && !['localhost', '127.0.0.1', '[::1]'].includes(u.hostname)) {
+    u.protocol = 'https:';
+    return c.redirect(u.toString(), 308);
+  }
+  await next();
+});
 app.use('*', secureHeaders());
 // Only the configured frontend origins may call the API from a browser; no cookies/credentials are ever used.
 app.use('*', (c, next) => cors({

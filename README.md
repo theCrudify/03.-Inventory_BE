@@ -17,6 +17,8 @@ integrasi CEISA 4.0 (mock host-to-host), kartu stok, dan laporan mutasi barang.
 Reset data demo di cloud (menghapus semua isi tabel lalu mengisi ulang):
 `DATABASE_URL='<connection string Neon>' npx tsx scripts/seed.ts`
 
+**Keamanan:** model akses (RBAC), kontrol, hasil audit, dan risiko yang diterima ada di [SECURITY.md](SECURITY.md). `npm test` menjalankan 32 tes, termasuk matriks hak akses tiap endpoint dan skenario serangan.
+
 ## Arsitektur
 
 ```

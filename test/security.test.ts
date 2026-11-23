@@ -20,7 +20,7 @@ after(async () => { for (const f of cleanup.reverse()) await f().catch(() => {})
 type Opts = { token?: string; body?: unknown; headers?: Record<string, string>; raw?: string };
 async function call(method: string, path: string, o: Opts = {}) {
   const hasBody = o.body !== undefined || o.raw !== undefined;
-  const res = await app.fetch(new Request(`http://api.test${path}`, {
+  const res = await app.fetch(new Request(`https://api.test${path}`, {
     method,
     headers: { ...(o.token ? { authorization: `Bearer ${o.token}` } : {}), ...(hasBody ? { 'content-type': 'application/json' } : {}), ...o.headers },
     body: hasBody ? (o.raw ?? JSON.stringify(o.body)) : undefined,
@@ -254,7 +254,7 @@ describe('Input: injeksi, batas ukuran, ID, CORS, header', { skip }, () => {
     assert.equal(ok.headers.get('access-control-allow-origin'), 'https://app.example.test');
     const bad = await call('GET', '/meta/public', { headers: { origin: 'https://penyerang.example' } });
     assert.equal(bad.headers.get('access-control-allow-origin'), null);
-    const pre = await app.fetch(new Request('http://api.test/items', { method: 'OPTIONS', headers: { origin: 'https://penyerang.example', 'access-control-request-method': 'DELETE' } }), env, ctx as never);
+    const pre = await app.fetch(new Request('https://api.test/items', { method: 'OPTIONS', headers: { origin: 'https://penyerang.example', 'access-control-request-method': 'DELETE' } }), env, ctx as never);
     assert.equal(pre.headers.get('access-control-allow-origin'), null);
   });
   test('respons: tidak di-cache, ada header keamanan, dan tidak membocorkan hash password', async () => {
@@ -266,6 +266,13 @@ describe('Input: injeksi, batas ukuran, ID, CORS, header', { skip }, () => {
     const lg = await login('viewer@arunika.demo');
     assert.ok(!/pbkdf2|passwordHash/i.test(lg.text), 'respons login tidak memuat hash');
     assert.ok(!('tokenVersion' in lg.json.user));
+  });
+  test('HTTP polos dialihkan ke HTTPS (kecuali localhost untuk pengembangan)', async () => {
+    const r = await app.fetch(new Request('http://api.example.test/auth/login', { method: 'POST' }), env, ctx as never);
+    assert.equal(r.status, 308);
+    assert.equal(r.headers.get('location'), 'https://api.example.test/auth/login');
+    const local = await app.fetch(new Request('http://localhost:8787/meta/public'), env, ctx as never);
+    assert.equal(local.status, 200, 'localhost tetap boleh HTTP');
   });
   test('galat server tidak membocorkan detail internal', async () => {
     const r = await call('GET', '/tidak-ada-endpoint-ini', { token: await tokenOf('viewer@arunika.demo') });
