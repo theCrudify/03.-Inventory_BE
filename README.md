@@ -172,19 +172,38 @@ membuat server menolak melayani dengan pesan yang jelas. Contoh lengkap ada di `
 | `LOGIN_WINDOW_MIN` / `LOGIN_LOCK_MIN` | 15 / 15 | Jendela hitung dan lama kunci |
 | `BODY_LIMIT_KB` | 256 | Ukuran body maksimal |
 
-## Deploy gratis (Cloudflare Workers + Neon)
+## Deploy (Cloudflare Workers + Neon)
 
-1. Buat project di [neon.tech](https://neon.tech) (free tier), lalu salin connection string (`...?sslmode=require`).
-2. Buat tabel dan isi data demo ke Neon:
+**Penting:** `git push` saja **tidak** men-deploy apa pun sampai repo dihubungkan (lihat "Otomatis lewat push" di bawah).
+Deploy yang berjalan sekarang memakai perintah CLI.
+
+### Persiapan sekali saja
+1. Buat project di [neon.tech](https://neon.tech) (free tier). Catat dua connection string:
+   *direct* (untuk skema dan seed) dan *pooled* (host `-pooler`, untuk Worker). Nama database: `new_inventory`.
+2. `npx wrangler login`
+3. Simpan secret di Cloudflare (tidak masuk repo):
    ```bash
-   DATABASE_URL='postgres://...neon.tech/neondb?sslmode=require' npx drizzle-kit push
-   DATABASE_URL='postgres://...neon.tech/neondb?sslmode=require' npx tsx scripts/seed.ts
+   npx wrangler secret put DATABASE_URL   # connection string pooled Neon
+   npx wrangler secret put JWT_SECRET     # openssl rand -hex 32
    ```
-3. Deploy API:
-   ```bash
-   npx wrangler login
-   npx wrangler secret put DATABASE_URL      # tempel connection string Neon
-   npx wrangler secret put JWT_SECRET        # string acak panjang, mis. `openssl rand -hex 32`
-   # di wrangler.toml: CORS_ORIGINS = "https://<app-anda>.vercel.app"
-   npm run deploy                            # → https://inventory-api.jidanfatahillah2003.workers.dev
-   ```
+4. Isi `CORS_ORIGINS` di `wrangler.toml` dengan URL frontend (`https://<app>.vercel.app`, tanpa garis miring akhir).
+
+### Setiap kali mengubah kode (CLI)
+| Yang berubah | Perintah |
+|---|---|
+| Kode API | `npm test && npm run deploy` |
+| Skema database (`src/core/db/schema.ts`) | `DATABASE_URL='<direct Neon>' npm run db:push`, lalu `npm run deploy` |
+| Reset data demo (**menghapus isi tabel**) | `DATABASE_URL='<direct Neon>' npm run db:seed` |
+| Ganti secret | `npx wrangler secret put JWT_SECRET` (mengganti `JWT_SECRET` mematikan semua sesi) |
+| Nilai non-rahasia (`CORS_ORIGINS`, batas login, dll.) | ubah `[vars]` di `wrangler.toml`, lalu `npm run deploy` |
+
+Urutan jika skema berubah: **db:push dulu, baru deploy**, supaya kode baru tidak berjalan di atas tabel lama.
+Cek hasilnya: `curl https://<worker>.workers.dev/` harus mengembalikan `{"name":"inventory-api","status":"ok"}`.
+Log langsung: `npx wrangler tail`.
+
+### Otomatis lewat push (opsional)
+Pilih salah satu:
+- **Cloudflare Workers Builds**: dashboard Cloudflare, Workers & Pages, `inventory-api`, Settings, Builds, hubungkan repo GitHub.
+  Build command kosong, deploy command `npx wrangler deploy`. Setiap push ke `main` ter-deploy. Skema tetap manual (`db:push`).
+- **GitHub Actions**: workflow yang menjalankan `npm ci && npm test && npx wrangler deploy` dengan secret repo
+  `CLOUDFLARE_API_TOKEN` (template "Edit Cloudflare Workers"). Tes butuh `DATABASE_URL` dan `JWT_SECRET` juga.
